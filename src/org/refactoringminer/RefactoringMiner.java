@@ -10,6 +10,12 @@ import org.refactoringminer.api.RefactoringHandler;
 import org.refactoringminer.rm1.GitHistoryRefactoringMinerImpl;
 import org.refactoringminer.util.GitServiceImpl;
 
+import java.io.IOException;	
+import java.nio.file.Files;	
+import java.nio.file.Path;	
+import java.nio.file.Paths;	
+import java.nio.file.StandardOpenOption;
+
 public class RefactoringMiner {
 
 	public static void main(String[] args) throws Exception {
@@ -52,25 +58,32 @@ public class RefactoringMiner {
 		}
 		GitService gitService = new GitServiceImpl();
 		try (Repository repo = gitService.openRepository(folder)) {
+			Path folderPath = Paths.get(folder);
+			String filePath = folderPath.toString() + "/" + "refactoring_output.json";	
+			Files.deleteIfExists(Paths.get(filePath));
+
 			String gitURL = repo.getConfig().getString("remote", "origin", "url");
 			GitHistoryRefactoringMiner detector = new GitHistoryRefactoringMinerImpl();
 			StringBuilder sb = new StringBuilder();
+
 			startJSON(sb);
 			detector.detectAll(repo, branch, new RefactoringHandler() {
 				private int commitCount = 0;
 				@Override
 				public void handle(String commitId, List<Refactoring> refactorings) {
-					if(commitCount > 0) {
-						sb.append(",").append("\n");
+					if (refactorings.isEmpty()){
+						System.out.println("No refactorings found in commit " + commitId);
+					}else{
+
+					String json_output = commitJSON(sb, gitURL, commitId, refactorings);
+					saveToFile(filePath,json_output);
 					}
-					commitJSON(sb, gitURL, commitId, refactorings);
-					commitCount++;
 				}
 
 				@Override
 				public void onFinish(int refactoringsCount, int commitsCount, int errorCommitsCount) {
-					//System.out.println(String.format("Total count: [Commits: %d, Errors: %d, Refactorings: %d]",
-					//		commitsCount, errorCommitsCount, refactoringsCount));
+					System.out.println(String.format("Total count: [Commits: %d, Errors: %d, Refactorings: %d]",
+							commitsCount, errorCommitsCount, refactoringsCount));
 				}
 
 				@Override
@@ -252,7 +265,8 @@ public class RefactoringMiner {
 		System.out.println(sb.toString());
 	}
 
-	private static void commitJSON(StringBuilder sb, String cloneURL, String currentCommitId, List<Refactoring> refactoringsAtRevision) {
+	private static String commitJSON(StringBuilder sb2, String cloneURL, String currentCommitId, List<Refactoring> refactoringsAtRevision) {
+		StringBuilder sb = new StringBuilder();
 		sb.append("{").append("\n");
 		sb.append("\t").append("\"").append("repository").append("\"").append(": ").append("\"").append(cloneURL).append("\"").append(",").append("\n");
 		sb.append("\t").append("\"").append("sha1").append("\"").append(": ").append("\"").append(currentCommitId).append("\"").append(",").append("\n");
@@ -271,6 +285,8 @@ public class RefactoringMiner {
 		}
 		sb.append("]").append("\n");
 		sb.append("}");
+		System.out.println(sb.toString());
+		return sb.toString();
 	}
 
 	private static void startJSON(StringBuilder sb) {
@@ -298,6 +314,16 @@ public class RefactoringMiner {
 				"-gc <git-URL> <commit-sha1> <timeout>\t\t\t\tDetect refactorings at specified commit <commit-sha1> for project <git-URL> within the given <timeout> in seconds. All required information is obtained directly from GitHub using the OAuth token in github-oauth.properties");
 		System.out.println(
 				"-gp <git-URL> <pull-request> <timeout>\t\t\t\tDetect refactorings at specified pull request <pull-request> for project <git-URL> within the given <timeout> in seconds for each commit in the pull request. All required information is obtained directly from GitHub using the OAuth token in github-oauth.properties");
+	}
+
+	private static void saveToFile(String fileName, String content) {	
+		Path path = Paths.get(fileName);	
+		byte[] contentBytes = (content + System.lineSeparator()).getBytes();	
+		try {	
+			Files.write(path, contentBytes, StandardOpenOption.CREATE, StandardOpenOption.APPEND);	
+		} catch (IOException e) {	
+			e.printStackTrace();	
+		}	
 	}
 
 	private static IllegalArgumentException argumentException() {
