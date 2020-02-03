@@ -71,10 +71,8 @@ public class RefactoringMiner {
 				private int commitCount = 0;
 				@Override
 				public void handle(String commitId, List<Refactoring> refactorings) {
-					if (refactorings.isEmpty()){
-						System.out.println("No refactorings found in commit " + commitId);
-					}else{
-
+					System.out.println(commitId);
+					if (!refactorings.isEmpty()){
 					String json_output = commitJSON(sb, gitURL, commitId, refactorings);
 					saveToFile(filePath,json_output);
 					}
@@ -285,7 +283,6 @@ public class RefactoringMiner {
 		}
 		sb.append("]").append("\n");
 		sb.append("}");
-		System.out.println(sb.toString());
 		return sb.toString();
 	}
 
