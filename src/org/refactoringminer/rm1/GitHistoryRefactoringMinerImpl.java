@@ -13,7 +13,6 @@ import java.io.OutputStream;
 import java.io.StringWriter;
 import java.net.URL;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.Collections;
 import java.util.Enumeration;
 import java.util.HashMap;
@@ -32,7 +31,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
-import java.util.regex.Matcher;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
@@ -72,49 +70,7 @@ public class GitHistoryRefactoringMinerImpl implements GitHistoryRefactoringMine
 	private GitHub gitHub;
 	
 	public GitHistoryRefactoringMinerImpl() {
-		this.setRefactoringTypesToConsider(
-			RefactoringType.RENAME_CLASS,
-			RefactoringType.MOVE_CLASS,
-			RefactoringType.MOVE_SOURCE_FOLDER,
-			RefactoringType.RENAME_METHOD,
-			RefactoringType.EXTRACT_OPERATION,
-			RefactoringType.INLINE_OPERATION,
-			RefactoringType.MOVE_OPERATION,
-			RefactoringType.PULL_UP_OPERATION,
-			RefactoringType.PUSH_DOWN_OPERATION,
-			RefactoringType.MOVE_ATTRIBUTE,
-			RefactoringType.MOVE_RENAME_ATTRIBUTE,
-			RefactoringType.REPLACE_ATTRIBUTE,
-			RefactoringType.PULL_UP_ATTRIBUTE,
-			RefactoringType.PUSH_DOWN_ATTRIBUTE,
-			RefactoringType.EXTRACT_INTERFACE,
-			RefactoringType.EXTRACT_SUPERCLASS,
-			RefactoringType.EXTRACT_SUBCLASS,
-			RefactoringType.EXTRACT_CLASS,
-			RefactoringType.EXTRACT_AND_MOVE_OPERATION,
-			RefactoringType.MOVE_RENAME_CLASS,
-			RefactoringType.RENAME_PACKAGE,
-			RefactoringType.EXTRACT_VARIABLE,
-			RefactoringType.INLINE_VARIABLE,
-			RefactoringType.RENAME_VARIABLE,
-			RefactoringType.RENAME_PARAMETER,
-			RefactoringType.RENAME_ATTRIBUTE,
-			RefactoringType.REPLACE_VARIABLE_WITH_ATTRIBUTE,
-			RefactoringType.PARAMETERIZE_VARIABLE,
-			RefactoringType.MERGE_VARIABLE,
-			RefactoringType.MERGE_PARAMETER,
-			RefactoringType.MERGE_ATTRIBUTE,
-			RefactoringType.SPLIT_VARIABLE,
-			RefactoringType.SPLIT_PARAMETER,
-			RefactoringType.SPLIT_ATTRIBUTE,
-			RefactoringType.CHANGE_RETURN_TYPE,
-			RefactoringType.CHANGE_VARIABLE_TYPE,
-			RefactoringType.CHANGE_PARAMETER_TYPE,
-			RefactoringType.CHANGE_ATTRIBUTE_TYPE,
-			RefactoringType.EXTRACT_ATTRIBUTE,
-			RefactoringType.MOVE_AND_RENAME_OPERATION,
-			RefactoringType.MOVE_AND_INLINE_OPERATION
-		);
+		this.setRefactoringTypesToConsider(RefactoringType.ALL);
 	}
 
 	public void setRefactoringTypesToConsider(RefactoringType ... types) {
@@ -240,8 +196,8 @@ public class GitHistoryRefactoringMinerImpl implements GitHistoryRefactoringMine
 				downloadAndExtractZipFile(projectFolder, cloneURL, parentCommitId);
 			}
 			if (currentFolder.exists() && parentFolder.exists()) {
-				UMLModel currentUMLModel = createModel(currentFolder, filesCurrent, repositoryDirectories(currentFolder));
-				UMLModel parentUMLModel = createModel(parentFolder, filesBefore, repositoryDirectories(parentFolder));
+				UMLModel currentUMLModel = createModel(currentFolder, filesCurrent);
+				UMLModel parentUMLModel = createModel(parentFolder, filesBefore);
 				// Diff between currentModel e parentModel
 				refactoringsAtRevision = parentUMLModel.diff(currentUMLModel, renamedFilesHint).getRefactorings();
 				refactoringsAtRevision = filter(refactoringsAtRevision);
@@ -258,30 +214,9 @@ public class GitHistoryRefactoringMinerImpl implements GitHistoryRefactoringMine
 		return refactoringsAtRevision;
 	}
 
-	private Set<String> repositoryDirectories(File folder) {
-		final String systemFileSeparator = Matcher.quoteReplacement(File.separator);
-		Set<String> repositoryDirectories = new LinkedHashSet<String>();
-		Collection<File> files = FileUtils.listFiles(folder, null, true);
-		for(File file : files) {
-			String path = file.getPath();
-			String relativePath = path.substring(folder.getPath().length()+1, path.length()).replaceAll(systemFileSeparator, "/");
-			if(relativePath.endsWith(".java")) {
-				String directory = relativePath.substring(0, relativePath.lastIndexOf("/"));
-				repositoryDirectories.add(directory);
-				//include sub-directories
-				String subDirectory = new String(directory);
-				while(subDirectory.contains("/")) {
-					subDirectory = subDirectory.substring(0, subDirectory.lastIndexOf("/"));
-					repositoryDirectories.add(subDirectory);
-				}
-			}
-		}
-		return repositoryDirectories;
-	}
-
 	private void downloadAndExtractZipFile(File projectFolder, String cloneURL, String commitId)
 			throws IOException {
-		String downloadLink = cloneURL.substring(0, cloneURL.indexOf(".git")) + "/archive/" + commitId + ".zip";
+		String downloadLink = extractDownloadLink(cloneURL, commitId);
 		File destinationFile = new File(projectFolder.getParentFile(), projectFolder.getName() + "-" + commitId + ".zip");
 		logger.info(String.format("Downloading archive %s", downloadLink));
 		FileUtils.copyURLToFile(new URL(downloadLink), destinationFile);
@@ -312,8 +247,7 @@ public class GitHistoryRefactoringMinerImpl implements GitHistoryRefactoringMine
 			List<String> filesBefore, List<String> filesCurrent, Map<String, String> renamedFilesHint) throws IOException {
 		logger.info("Processing {} {} ...", cloneURL, currentCommitId);
 		GitHub gitHub = connectToGitHub();
-		//https://github.com/ is 19 chars
-		String repoName = cloneURL.substring(19, cloneURL.indexOf(".git"));
+		String repoName = extractRepositoryName(cloneURL);
 		GHRepository repository = gitHub.getRepository(repoName);
 		GHCommit commit = repository.getCommit(currentCommitId);
 		String parentCommitId = commit.getParents().get(0).getSHA1();
@@ -414,8 +348,8 @@ public class GitHistoryRefactoringMinerImpl implements GitHistoryRefactoringMine
 		return new UMLModelASTReader(fileContents, repositoryDirectories).getUmlModel();
 	}
 
-	protected UMLModel createModel(File projectFolder, List<String> filePaths, Set<String> repositoryDirectories) throws Exception {
-		return new UMLModelASTReader(projectFolder, filePaths, repositoryDirectories).getUmlModel();
+	protected UMLModel createModel(File projectFolder, List<String> filePaths) throws Exception {
+		return new UMLModelASTReader(projectFolder, filePaths).getUmlModel();
 	}
 
 	@Override
@@ -575,8 +509,7 @@ public class GitHistoryRefactoringMinerImpl implements GitHistoryRefactoringMine
 			Set<String> repositoryDirectoriesBefore, Set<String> repositoryDirectoriesCurrent) throws IOException, InterruptedException {
 		logger.info("Processing {} {} ...", cloneURL, currentCommitId);
 		GitHub gitHub = connectToGitHub();
-		//https://github.com/ is 19 chars
-		String repoName = cloneURL.substring(19, cloneURL.indexOf(".git"));
+		String repoName = extractRepositoryName(cloneURL);
 		GHRepository repository = gitHub.getRepository(repoName);
 		GHCommit currentCommit = repository.getCommit(currentCommitId);
 		final String parentCommitId = currentCommit.getParents().get(0).getSHA1();
@@ -727,13 +660,72 @@ public class GitHistoryRefactoringMinerImpl implements GitHistoryRefactoringMine
 	@Override
 	public void detectAtPullRequest(String cloneURL, int pullRequestId, RefactoringHandler handler, int timeout) throws IOException {
 		GitHub gitHub = connectToGitHub();
-		//https://github.com/ is 19 chars
-		String repoName = cloneURL.substring(19, cloneURL.indexOf(".git"));
+		String repoName = extractRepositoryName(cloneURL);
 		GHRepository repository = gitHub.getRepository(repoName);
 		GHPullRequest pullRequest = repository.getPullRequest(pullRequestId);
 		PagedIterable<GHPullRequestCommitDetail> commits = pullRequest.listCommits();
 		for(GHPullRequestCommitDetail commit : commits) {
 			detectAtCommit(cloneURL, commit.getSha(), handler, timeout);
 		}
+	}
+
+	private static final String GITHUB_URL = "https://github.com/";
+	private static final String BITBUCKET_URL = "https://bitbucket.org/";
+
+	private static String extractRepositoryName(String cloneURL) {
+		int hostLength = 0;
+		if(cloneURL.startsWith(GITHUB_URL)) {
+			hostLength = GITHUB_URL.length();
+		}
+		else if(cloneURL.startsWith(BITBUCKET_URL)) {
+			hostLength = BITBUCKET_URL.length();
+		}
+		int indexOfDotGit = cloneURL.length();
+		if(cloneURL.endsWith(".git")) {
+			indexOfDotGit = cloneURL.indexOf(".git");
+		}
+		else if(cloneURL.endsWith("/")) {
+			indexOfDotGit = cloneURL.length() - 1;
+		}
+		String repoName = cloneURL.substring(hostLength, indexOfDotGit);
+		return repoName;
+	}
+
+	public static String extractCommitURL(String cloneURL, String commitId) {
+		int indexOfDotGit = cloneURL.length();
+		if(cloneURL.endsWith(".git")) {
+			indexOfDotGit = cloneURL.indexOf(".git");
+		}
+		else if(cloneURL.endsWith("/")) {
+			indexOfDotGit = cloneURL.length() - 1;
+		}
+		String commitResource = "/";
+		if(cloneURL.startsWith(GITHUB_URL)) {
+			commitResource = "/commit/";
+		}
+		else if(cloneURL.startsWith(BITBUCKET_URL)) {
+			commitResource = "/commits/";
+		}
+		String commitURL = cloneURL.substring(0, indexOfDotGit) + commitResource + commitId;
+		return commitURL;
+	}
+
+	private static String extractDownloadLink(String cloneURL, String commitId) {
+		int indexOfDotGit = cloneURL.length();
+		if(cloneURL.endsWith(".git")) {
+			indexOfDotGit = cloneURL.indexOf(".git");
+		}
+		else if(cloneURL.endsWith("/")) {
+			indexOfDotGit = cloneURL.length() - 1;
+		}
+		String downloadResource = "/";
+		if(cloneURL.startsWith(GITHUB_URL)) {
+			downloadResource = "/archive/";
+		}
+		else if(cloneURL.startsWith(BITBUCKET_URL)) {
+			downloadResource = "/get/";
+		}
+		String downloadLink = cloneURL.substring(0, indexOfDotGit) + downloadResource + commitId + ".zip";
+		return downloadLink;
 	}
 }
