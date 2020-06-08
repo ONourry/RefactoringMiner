@@ -59,7 +59,10 @@ public class RefactoringMiner {
 		GitService gitService = new GitServiceImpl();
 		try (Repository repo = gitService.openRepository(folder)) {
 			Path folderPath = Paths.get(folder);
-			String filePath = folderPath.toString() + "/" + "refactoring_output.json";	
+			//String filePath = folderPath.toString() + "/" + "refactoring_output.json";
+			//project should be in /home/oliviern/MobileApps/repos/projectName
+			String projectName = folderPath.split("/",0)[5]
+			String filePath = "/home/oliviern/MobileApps/output/" + projectName + ".json"
 			Files.deleteIfExists(Paths.get(filePath));
 
 			String gitURL = repo.getConfig().getString("remote", "origin", "url");
